@@ -1,0 +1,238 @@
+<!DOCTYPE html>
+<html lang="zh-HK">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>238X 到站時間</title>
+    <style>
+        :root {
+            --bg-color: #121212;
+            --card-bg: #1e1e1e;
+            --kmb-red: #ed1c24;
+            --text-main: #ffffff;
+            --text-sub: #a0a0a0;
+            --accent-green: #4caf50;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            background-color: var(--bg-color);
+            color: var(--text-main);
+            margin: 0;
+            padding: 20px;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 90vh;
+        }
+
+        .card {
+            background-color: var(--card-bg);
+            width: 100%;
+            max-width: 380px;
+            border-radius: 20px;
+            padding: 24px;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+            box-sizing: border-box;
+            text-align: center;
+        }
+
+        .route-title {
+            font-size: 3.5rem;
+            font-weight: 800;
+            color: var(--kmb-red);
+            margin: 0;
+            line-height: 1;
+        }
+
+        .switch-group {
+            display: flex;
+            background-color: #2a2a2a;
+            border-radius: 12px;
+            padding: 4px;
+            margin: 20px 0;
+            gap: 4px;
+        }
+
+        .switch-btn {
+            flex: 1;
+            padding: 10px 0;
+            border: none;
+            background: transparent;
+            color: var(--text-sub);
+            font-size: 0.95rem;
+            font-weight: bold;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+
+        .switch-btn.active {
+            background-color: var(--kmb-red);
+            color: var(--text-main);
+        }
+
+        .station-header {
+            margin-bottom: 20px;
+            padding-bottom: 12px;
+            border-bottom: 1px solid #333;
+        }
+
+        .stop-name {
+            font-size: 1.3rem;
+            font-weight: bold;
+            color: var(--text-main);
+        }
+
+        .dest-name {
+            font-size: 0.95rem;
+            color: var(--text-sub);
+            margin-top: 4px;
+        }
+
+        .eta-list {
+            list-style: none;
+            padding: 0;
+            margin: 0;
+        }
+
+        .eta-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 14px 8px;
+            border-bottom: 1px solid #2a2a2a;
+            font-size: 1.25rem;
+        }
+
+        .eta-item:last-child {
+            border-bottom: none;
+        }
+
+        .eta-item.first {
+            color: var(--accent-green);
+            font-weight: bold;
+            font-size: 1.5rem;
+        }
+
+        .clock {
+            font-size: 0.95rem;
+            color: var(--text-sub);
+            font-weight: normal;
+        }
+
+        .status-msg {
+            color: var(--text-sub);
+            padding: 20px 0;
+            font-size: 1.1rem;
+        }
+    </style>
+</head>
+<body>
+
+<div class="card">
+    <div class="route-title">238X</div>
+
+    <div class="switch-group">
+        <button class="switch-btn active" id="btn-outbound" onclick="setDirection('outbound')">黃竹街上車</button>
+        <button class="switch-btn" id="btn-inbound" onclick="setDirection('inbound')">中港城上車</button>
+    </div>
+
+    <div class="station-header">
+        <div class="stop-name" id="stop-display">黃竹街 (SS493)</div>
+        <div class="dest-name" id="dest-display">往 中港城總站</div>
+    </div>
+
+    <ul class="eta-list" id="eta-container">
+        <li class="status-msg">載入中...</li>
+    </ul>
+</div>
+
+<script>
+    const ROUTE = "238X";
+
+    // 設定去程與回程的車站數據
+    const STATIONS = {
+        outbound: {
+            stopId: "944A99951A8118EC", // 黃竹街 (SS493)
+            dir: "O",
+            stopName: "黃竹街 (SS493)",
+            destName: "往 中港城總站"
+        },
+        inbound: {
+            stopId: "2D135EFBF63737FB", // 中港城總站 (YT992)
+            dir: "I",
+            stopName: "中港城總站 (YT992)",
+            destName: "往 海濱花園"
+        }
+    };
+
+    let currentMode = "outbound";
+
+    function setDirection(mode) {
+        currentMode = mode;
+        
+        // 更新按鈕樣式
+        document.getElementById('btn-outbound').classList.toggle('active', mode === 'outbound');
+        document.getElementById('btn-inbound').classList.toggle('active', mode === 'inbound');
+        
+        // 更新站名顯示
+        document.getElementById('stop-display').innerText = STATIONS[mode].stopName;
+        document.getElementById('dest-display').innerText = STATIONS[mode].destName;
+
+        // 重新讀取數據
+        fetchETA();
+    }
+
+    async function fetchETA() {
+        const container = document.getElementById('eta-container');
+        const config = STATIONS[currentMode];
+
+        try {
+            const res = await fetch(`https://data.etabus.gov.hk/v1/transport/kmb/stop-eta/${config.stopId}`);
+            const data = await res.json();
+
+            // 過濾 238X 及指定方向 (O / I)
+            const etas = data.data.filter(item => item.route === ROUTE && item.dir === config.dir);
+
+            container.innerHTML = '';
+
+            if (!etas || etas.length === 0 || !etas.some(e => e.eta)) {
+                container.innerHTML = '<li class="status-msg">現時沒有班次資料</li>';
+                return;
+            }
+
+            etas.forEach((item, index) => {
+                if (!item.eta) return;
+
+                const etaTime = new Date(item.eta);
+                const now = new Date();
+                const diffMinutes = Math.round((etaTime - now) / 60000);
+
+                let minText = diffMinutes <= 0 ? "即將到達" : `${diffMinutes} 分鐘`;
+                let timeText = etaTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+
+                const li = document.createElement('li');
+                li.className = 'eta-item' + (index === 0 ? ' first' : '');
+                li.innerHTML = `
+                    <span>${minText}</span>
+                    <span class="clock">${timeText}</span>
+                `;
+                container.appendChild(li);
+            });
+
+        } catch (err) {
+            console.error("載入到站時間失敗:", err);
+            container.innerHTML = '<li class="status-msg">載入失敗</li>';
+        }
+    }
+
+    // 1. 首次載入
+    fetchETA();
+
+    // 2. 每 30 秒自動刷新預報
+    setInterval(fetchETA, 30000);
+</script>
+
+</body>
+</html>
